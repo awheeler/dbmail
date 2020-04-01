@@ -236,8 +236,7 @@ void imap_cb_read(void *arg)
 		ci_cork(session->ci);
 		if (enough)
 			imap_handle_input(session);
-		else
-			imap_session_bailout(session);
+		imap_session_bailout(session);
 	} else if (have > 0)
 		imap_handle_input(session);
 }

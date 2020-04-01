@@ -104,6 +104,26 @@ int drop_privileges(char *newuser, char *newgroup)
 	return 0;
 }
 
+int get_opened_fd_count(void)
+{
+	DIR* dir = NULL;
+	struct dirent* entry = NULL;
+	char buf[32];
+	int fd_count = 0;
+
+	snprintf(buf, 32, "/proc/%i/fd/", getpid());
+
+	dir = opendir(buf);
+	if (dir == NULL)
+		return -1;
+
+	while ((entry = readdir(dir)) != NULL)
+		fd_count++;
+	closedir(dir);
+
+	return fd_count - 2; /* exclude '.' and '..' entries */
+}
+
 void create_unique_id(char *target, uint64_t message_idnr)
 {
 	char md5_str[FIELDSIZE];
@@ -1345,9 +1365,10 @@ static GList * imap_append_hash_as_string(GList *list, const char *type)
 	char value[1024];
 	char *head = (char *)type;
 	GList *l = NULL;
-
-	if (! type)
+	if (! type) {
+		list = g_list_append_printf(list, "NIL");
 		return list;
+	}
 
 	TRACE(TRACE_DEBUG, "analyse [%s]", type);
 	while (type[i]) {
@@ -1365,18 +1386,26 @@ static GList * imap_append_hash_as_string(GList *list, const char *type)
 		}
 		break;
 	}
-
+	
 	head += i;
-
+	//implementing a hard protection
+	int maxSize=strlen(head);
+	maxSize=strlen(head);
+	if (maxSize>1536)
+		maxSize=1536;//hard limit max len of name+len of value
 	int offset = 0;
 	int inname = 1;
 	TRACE(TRACE_DEBUG, "analyse [%s]", head);
-	while (head) {
+	while (head && maxSize>0) {
+		//hard protection, preventing going maxsize
+		maxSize--;
 		curr = head[offset];
 		if ((! curr) && (offset==0))
 			break;
 		if (curr == '=' && inname) {
 			memset(name, 0, sizeof(name));
+			if (offset>512) 
+				offset=512; //hard limit
 			strncpy(name, head, offset);
 			g_strstrip(name);
 			head += offset+1;
@@ -1389,6 +1418,8 @@ static GList * imap_append_hash_as_string(GList *list, const char *type)
 			size_t len;
 			char *clean1, *clean2, *clean3;
 			memset(value, 0, sizeof(value));
+			if (offset>1024) 
+				offset=1024; //hard limit
 			strncpy(value, head, offset);
 			head += offset+1;
 			inname = 1;

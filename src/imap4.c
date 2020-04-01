@@ -236,8 +236,7 @@ void imap_cb_read(void *arg)
 		ci_cork(session->ci);
 		if (enough)
 			imap_handle_input(session);
-		else
-			imap_session_bailout(session);
+		imap_session_bailout(session);
 	} else if (have > 0)
 		imap_handle_input(session);
 }
@@ -349,6 +348,12 @@ static void send_greeting(ImapSession *session)
 			       	Capa_as_string(session->preauth_capa), DM_VERSION);
 
 	dbmail_imap_session_set_state(session, CLIENTSTATE_NON_AUTHENTICATED);
+}
+
+static void disconnect_user(ImapSession *session)
+{
+	imap_session_printf(session, "* BYE [Service unavailable.]\r\n");
+	imap_handle_abort(session);
 }
 
 /*
@@ -601,6 +606,8 @@ int imap_handle_connection(client_sock *c)
 {
 	ImapSession *session;
 	ClientBase_T *ci;
+	struct rlimit fd_limit;
+	int fd_count;
 
 	ci = client_init(c);
 
@@ -617,7 +624,20 @@ int imap_handle_connection(client_sock *c)
 		Capa_remove(session->capa, "LOGINDISABLED");
 	}
 
-	send_greeting(session);
+	fd_count = get_opened_fd_count();
+	if (fd_count < 0 || getrlimit(RLIMIT_NPROC, &fd_limit) < 0) {
+		TRACE(TRACE_ERR,
+			"[%p] failed to retrieve fd limits, dropping client connection",
+			session);
+		disconnect_user(session);
+	} else if (fd_limit.rlim_cur - fd_count < FREE_DF_THRESHOLD) {
+		TRACE(TRACE_WARNING,
+			"[%p] fd count [%d], fd limit [%d], fd threshold [%d]: dropping client connection",
+			session, fd_count, fd_limit.rlim_cur, FREE_DF_THRESHOLD);
+		disconnect_user(session);
+	} else {
+		send_greeting(session);
+	}
 
 	reset_callbacks(session);
 

@@ -1665,6 +1665,7 @@ void _structure_part_message(GMimeObject *part, gpointer data, gboolean extensio
 	GList *list = NULL;
 	size_t s = 0, l = 0;
 	GMimeObject *object;
+	GMimeContentType *type;
 	
 	object = part;
 	
@@ -1675,18 +1676,23 @@ void _structure_part_message(GMimeObject *part, gpointer data, gboolean extensio
 	
 	list = g_list_append_printf(list,"%d", s);
 
-	/* envelope structure */
-	b = imap_get_envelope(g_mime_message_part_get_message(GMIME_MESSAGE_PART(part)));
-	list = g_list_append_printf(list,"%s", b?b:"NIL");
-	g_free(b);
+	type = g_mime_object_get_content_type(object);
 
-	/* body structure */
-	b = imap_get_structure(g_mime_message_part_get_message(GMIME_MESSAGE_PART(part)), extension);
-	list = g_list_append_printf(list,"%s", b?b:"NIL");
-	g_free(b);
+	// If subtype is not rfc822, exclude envelope structure, body structure, and lines as per RFC 3501
+	if (g_mime_content_type_is_type(type,"message","rfc822")) {
+		/* envelope structure */
+		b = imap_get_envelope(g_mime_message_part_get_message(GMIME_MESSAGE_PART(part)));
+		list = g_list_append_printf(list,"%s", b?b:"NIL");
+		g_free(b);
 
-	/* lines */
-	list = g_list_append_printf(list,"%d", l);
+		/* body structure */
+		b = imap_get_structure(g_mime_message_part_get_message(GMIME_MESSAGE_PART(part)), extension);
+		list = g_list_append_printf(list,"%s", b?b:"NIL");
+		g_free(b);
+
+		/* lines */
+		list = g_list_append_printf(list,"%d", l);
+	}
 
 	/* extension data in case of BODYSTRUCTURE */
 	if (extension) {
@@ -1819,17 +1825,17 @@ GList* dbmail_imap_append_alist_as_plist(GList *list, InternetAddressList *ialis
 			} else {
 				t = g_list_append_printf(t, "NIL");
 			}
-                        
+
 			/* source route */
 			t = g_list_append_printf(t, "NIL");
-                        
+
 			/* mailbox name and host name */
 			if ((mailbox = addr ? (char *)addr : NULL) != NULL) {
 				/* defensive mode for 'To: "foo@bar.org"' addresses */
 				g_strstrip(g_strdelimit(mailbox,"\"",' '));
 				
 				tokens = g_strsplit(mailbox,"@",2);
-                        
+
 				/* mailbox name */
 				if (tokens[0])
 					t = g_list_append_printf(t, "\"%s\"", tokens[0]);
